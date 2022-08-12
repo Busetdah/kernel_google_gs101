@@ -534,7 +534,7 @@ static const struct exynos_panel_mode s6e3fc3_6a_modes[] = {
 		},
 		.te2_timing = {
 			.rising_edge = 0,
-			.falling_edge = 0 + 48,
+			.falling_edge = 0 + 66,
 		},
 	},
 	{
@@ -568,7 +568,7 @@ static const struct exynos_panel_mode s6e3fc3_6a_modes[] = {
 		},
 		.te2_timing = {
 			.rising_edge = 0,
-			.falling_edge = 0 + 48,
+			.falling_edge = 0 + 66,
 		},
 	},
 };
