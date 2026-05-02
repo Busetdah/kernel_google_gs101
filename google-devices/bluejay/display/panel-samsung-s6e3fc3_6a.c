@@ -356,7 +356,7 @@ static int s6e3fc3_6a_enable(struct drm_panel *panel)
 
 	exynos_panel_send_cmd_set(ctx, &s6e3fc3_6a_init_cmd_set);
 
-	s6e3fc3_6a_change_frequency(ctx, drm_mode_vrefresh(mode));
+	s6e3fc3_6a_change_frequency(ctx, drm_mode_vrefresh(&pmode->mode));
 
 	if (ctx->panel_rev == PANEL_REV_PROTO1_1)
 		exynos_panel_send_cmd_set(ctx, &s6e3fc3_6a_4_pwm_cmd_set);
