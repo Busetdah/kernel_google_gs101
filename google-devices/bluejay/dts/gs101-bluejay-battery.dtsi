@@ -63,15 +63,47 @@
 					google,batt-id = <3>;
 					google,bhi-algo-ver = <11>;
 
+					/*
+					 * Pixel 6a Battery Performance Program override.
+					 *
+					 * The vendor profile shipped with stock Android 16+
+					 * applies an unconditional 400 mV float-voltage cliff
+					 * at cycle 400 via:
+					 *   google,aafv-ref-cycles = <200 399 400>;
+					 *   google,aafv-ref-offset = <  0  20 400>;
+					 *   google,aafv-cliff-cycle = <0>;
+					 *   google,aafv-cliff-offset = <(-1)>;
+					 *   google,aacp-health-over-cliff = <1>;
+					 *   google,aacp-opt-out-cut-off-cycles = <400>;
+					 * which drops usable Vfloat from 4.45V to ~4.05V the
+					 * moment the device hits 400 charge cycles, causing
+					 * the well-known capacity / charging-speed regression
+					 * (Pixel 6a Battery Performance Program, Jul 2025).
+					 *
+					 * Replace the cliff schedule with the same gradual
+					 * fade used by the ATL profile (batt-id-1-atl above),
+					 * which produces a smooth ~130 mV reduction over
+					 * 1000 cycles, and disable the opt-out cutoff so the
+					 * user can keep the original behaviour past cycle 400
+					 * via the standard health_over_cutoff sysfs path.
+					 *
+					 * BHI/AACT/AACR (battery health and aged-charge tables)
+					 * are preserved unchanged so cycle counting, health
+					 * reporting, and TEMP-DEFEND continue to work.
+					 *
+					 * Disclaimer: a subset of Pixel 6a batteries identified
+					 * by Google (impacted-devices list) is at increased
+					 * risk of overheating without the vendor cliff. Users
+					 * should keep TEMP-DEFEND (b/170700459) trip points
+					 * intact and avoid leaving the device on a charger
+					 * unattended at high SoC.
+					 */
 					google,aacr-ref-cycles = <399 400 1000>;
 					google,aacr-ref-fade10 = <  0 200  200>;
-					google,aafv-ref-cycles = <200 399 400>;
-					google,aafv-ref-offset = <  0  20 400>;
+					google,aafv-ref-cycles = <200 400 600 800 1000 1001>;
+					google,aafv-ref-offset = <  0  20  40  60   80  130>;
 
-					google,aafv-cliff-cycle = <0>;
-					google,aafv-cliff-offset = <(-1)>;
-					google,aacp-health-over-cliff = <1>;
-					google,aacp-opt-out-cut-off-cycles = <400>;
+					google,aacp-opt-out-cut-off-cycles = <0>;
 					google,aacp-health-over-cutoff = <2>;
 
 					google,aact-config = <1>;
