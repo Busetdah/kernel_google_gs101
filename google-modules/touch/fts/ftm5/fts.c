@@ -1529,10 +1529,10 @@ static ssize_t stm_fts_cmd_read(struct file *fp, struct kobject *kobj,
 	int size = (6 * 2) + 1;
 	int nodes = 0;
 	int init_type = SPECIAL_PANEL_INIT;
-	u8 *all_strbuff;
+	u8 *all_strbuff = NULL;
 	struct device *dev = kobj_to_dev(kobj);
 	struct fts_ts_info *info = dev_get_drvdata(dev);
-	const char *limits_file = info->board->limits_name;
+	const char *limits_file;
 	char *label[2];
 
 	MutualSenseData compData;
@@ -1543,6 +1543,12 @@ static ssize_t stm_fts_cmd_read(struct file *fp, struct kobject *kobj,
 
 	u8 report = 0;
 
+	if (!info) {
+		dev_err(dev, "%s: Unable to access driver data\n", __func__);
+		return -EINVAL;
+	}
+	limits_file = info->board->limits_name;
+
 	if (offset > 0)
 		goto offset_reading;
 
@@ -1550,15 +1556,15 @@ static ssize_t stm_fts_cmd_read(struct file *fp, struct kobject *kobj,
 		memset(info->stm_fts_cmd_buff, 0, MAX_RAWDATA_STR_SIZE);
 		dev_warn(dev, "info->stm_fts_cmd_buff existed.\n");
 	} else {
-		info->stm_fts_cmd_buff = (u8 *)kmalloc(MAX_RAWDATA_STR_SIZE,
-						       GFP_KERNEL);
+		info->stm_fts_cmd_buff = kmalloc(MAX_RAWDATA_STR_SIZE,
+						 GFP_KERNEL);
+		if (!info->stm_fts_cmd_buff) {
+			dev_err(dev, "%s: Failed to allocate stm_fts_cmd_buff\n",
+				__func__);
+			return -ENOMEM;
+		}
 	}
 	all_strbuff = info->stm_fts_cmd_buff;
-
-	if (!info) {
-		dev_err(dev, "%s: Unable to access driver data\n", __func__);
-		return  -EINVAL;
-	}
 
 	if (!mutex_trylock(&info->diag_cmd_lock)) {
 		dev_err(dev, "%s: Blocking concurrent access\n", __func__);
