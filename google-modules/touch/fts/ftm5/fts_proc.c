@@ -468,7 +468,13 @@ static void *fts_seq_start(struct seq_file *s, loff_t *pos)
 		int size = 13 * sizeof(u8);
 
 		dev_info(info->dev, "%s: No data to print!\n", __func__);
-		info->driver_test_buff = (u8 *)kmalloc(size, GFP_KERNEL);
+		info->driver_test_buff = kmalloc(size, GFP_KERNEL);
+		if (!info->driver_test_buff) {
+			dev_err(info->dev,
+				"%s: Failed to allocate driver_test_buff\n",
+				__func__);
+			return NULL;
+		}
 		info->limit = scnprintf(info->driver_test_buff,
 				  size,
 				  "{ %08X }\n", ERROR_OP_NOT_ALLOW);
