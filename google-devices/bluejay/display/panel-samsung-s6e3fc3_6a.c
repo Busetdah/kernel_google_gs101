@@ -48,6 +48,7 @@ static const u8 test_key_off_f0[] = { 0xF0, 0xA5, 0xA5 };
 static const u8 test_key_on_f1[] = { 0xF1, 0x5A, 0x5A };
 static const u8 test_key_off_f1[] = { 0xF1, 0xA5, 0xA5 };
 static const u8 freq_update[] = { 0xF7, 0x0A };
+static const u8 FQ_update[] = { 0xF7, 0x07 };
 
 static const struct exynos_dsi_cmd s6e3fc3_6a_off_cmds[] = {
 	EXYNOS_DSI_CMD(display_off, 0),
@@ -121,28 +122,20 @@ static const struct exynos_binned_lp s6e3fc3_6a_binned_lp[] = {
 
 static const struct exynos_dsi_cmd s6e3fc3_6a_init_cmds[] = {
 	EXYNOS_DSI_CMD_SEQ_DELAY(120, 0x11), /* sleep out */
-	EXYNOS_DSI_CMD_SEQ(0x35), /* TE on */
+	EXYNOS_DSI_CMD_SEQ(0x35, 0x00), /* TE on */
 	EXYNOS_DSI_CMD_SEQ(0x2A, 0x00, 0x00, 0x04, 0x37), /* CASET */
 	EXYNOS_DSI_CMD_SEQ(0x2B, 0x00, 0x00, 0x09, 0x5F), /* PASET */
 
 	EXYNOS_DSI_CMD0(test_key_on_f0),
 
-	/* TE rising time */
-	EXYNOS_DSI_CMD_SEQ_REV(PANEL_REV_LT(PANEL_REV_EVT1),
-			       0xB9, 0x01, 0x09, 0x5C, 0x00, 0x0B),
-
 	/* FQ CON setting */
-	EXYNOS_DSI_CMD_SEQ(0xB0, 0x27, 0xF2 ),
-	EXYNOS_DSI_CMD_SEQ(0xF2, 0x00),
-	EXYNOS_DSI_CMD0(freq_update),
+	EXYNOS_DSI_CMD_SEQ(0xB0, 0x27, 0xF2),
+	EXYNOS_DSI_CMD_SEQ(0xF2, 0x80),
+	EXYNOS_DSI_CMD0(FQ_update),
 
-	/* IRC setting for HBM */
-	EXYNOS_DSI_CMD_SEQ_REV(PANEL_REV_PROTO1, 0xB0, 0x0B, 0x8F),
-	EXYNOS_DSI_CMD_SEQ_REV(PANEL_REV_PROTO1, 0x8F, 0x2B),
-
-	/* Enable FD in display PMIC for ELVDD and ELVSS */
-	EXYNOS_DSI_CMD_SEQ_REV(PANEL_REV_LT(PANEL_REV_EVT1), 0xB0, 0x0B, 0xF4),
-	EXYNOS_DSI_CMD_SEQ_REV(PANEL_REV_LT(PANEL_REV_EVT1), 0xF4, 0x1C),
+	/* IRC setting */
+	EXYNOS_DSI_CMD_SEQ(0xB0, 0x03, 0x8F),
+	EXYNOS_DSI_CMD_SEQ(0x8F, 0x25),
 
 	/* Local HBM circle location setting */
 	EXYNOS_DSI_CMD0(test_key_on_f1),
@@ -176,8 +169,8 @@ static void s6e3fc3_6a_get_te2_setting(struct exynos_panel_te2_timing *timing,
 	width_low_byte = (falling - rising) & 0xFF;
 	width_high_byte = ((falling - rising) >> 8) & 0xF;
 
-	setting[0] = (delay_high_byte << 4) | width_high_byte;
-	setting[1] = delay_low_byte;
+	setting[0] = (delay_high_byte >> 4) | (delay_low_byte >> 4);
+	setting[1] = ((delay_low_byte & 0xF) << 4) | (width_high_byte);
 	setting[2] = width_low_byte;
 }
 
@@ -206,27 +199,25 @@ static void s6e3fc3_6a_update_te2(struct exynos_panel *ctx)
 
 		s6e3fc3_6a_get_te2_setting(&timing, &setting[i][1]);
 
-		dev_dbg(ctx->dev, "TE2 updated normal %dHz: 0xcb 0x%x 0x%x 0x%x\n",
+		dev_info(ctx->dev, "TE2 updated normal %dHz: 0xcb 0x%x 0x%x 0x%x\n",
 			(i == 0) ? 60 : 90,
 			setting[i][1], setting[i][2], setting[i][3]);
 	}
 
 	/* LP mode */
-	if (ctx->current_mode->exynos_mode.is_lp_mode) {
+	if (ctx->current_mode) {
 		ret = exynos_panel_get_current_mode_te2(ctx, &timing);
 		if (!ret)
 			s6e3fc3_6a_get_te2_setting(&timing, &lp_setting[1]);
-		else if (ret == -EAGAIN)
-			dev_dbg(ctx->dev,
-				"Panel is not ready, use default setting\n");
 		else
 			return;
 
-		dev_dbg(ctx->dev, "TE2 updated LP: 0xcb 0x%x 0x%x 0x%x\n",
+		dev_info(ctx->dev, "TE2 updated LP: 0xcb 0x%x 0x%x 0x%x\n",
 			lp_setting[1], lp_setting[2], lp_setting[3]);
 	}
 
 	EXYNOS_DCS_WRITE_TABLE(ctx, test_key_on_f0);
+
 	EXYNOS_DCS_WRITE_SEQ(ctx, 0xB0, 0x28, 0xF2); /* global para  */
 	EXYNOS_DCS_WRITE_SEQ(ctx, 0xF2, 0xCC); /* global para 10bit */
 	EXYNOS_DCS_WRITE_SEQ(ctx, 0xB0, 0x00, 0x26, 0xF2); /* global para */
@@ -235,13 +226,14 @@ static void s6e3fc3_6a_update_te2(struct exynos_panel *ctx)
 	EXYNOS_DCS_WRITE_TABLE(ctx, setting[0]); /* 60Hz control */
 	EXYNOS_DCS_WRITE_SEQ(ctx, 0xB0, 0x01, 0x2F, 0xCB); /* global para */
 	EXYNOS_DCS_WRITE_TABLE(ctx, setting[1]); /* 90Hz control */
-	if (ctx->current_mode->exynos_mode.is_lp_mode) {
+	if (ctx->current_mode && ctx->current_mode->exynos_mode.is_lp_mode) {
 		EXYNOS_DCS_WRITE_SEQ(ctx, 0xB0, 0x01, 0xAF, 0xCB); /* global para */
 		EXYNOS_DCS_WRITE_TABLE(ctx, lp_setting); /* HLPM mode */
 	}
 	EXYNOS_DCS_WRITE_SEQ(ctx, 0xB0, 0x00, 0x28, 0xF2); /* global para */
 	EXYNOS_DCS_WRITE_SEQ(ctx, 0xF2, 0xC4); /* global para 8bit */
 	EXYNOS_DCS_WRITE_TABLE(ctx, freq_update); /* LTPS update */
+
 	EXYNOS_DCS_WRITE_TABLE(ctx, test_key_off_f0);
 }
 
@@ -256,7 +248,7 @@ static void s6e3fc3_6a_change_frequency(struct exynos_panel *ctx,
 	EXYNOS_DCS_WRITE_TABLE(ctx, freq_update);
 	EXYNOS_DCS_WRITE_TABLE(ctx, test_key_off_f0);
 
-	dev_dbg(ctx->dev, "%s: change to %uhz\n", __func__, vrefresh);
+	dev_info(ctx->dev, "%s: change to %uhz\n", __func__, vrefresh);
 }
 
 static void s6e3fc3_6a_update_wrctrld(struct exynos_panel *ctx)
@@ -272,7 +264,7 @@ static void s6e3fc3_6a_update_wrctrld(struct exynos_panel *ctx)
 	if (ctx->dimming_on)
 		val |= s6e3fc3_6a_WRCTRLD_DIMMING_BIT;
 
-	dev_dbg(ctx->dev,
+	dev_info(ctx->dev,
 		"%s(wrctrld:0x%x, hbm: %s, dimming: %s, local_hbm: %s)\n",
 		__func__, val, IS_HBM_ON(ctx->hbm_mode) ? "on" : "off",
 		ctx->dimming_on ? "on" : "off",
@@ -280,7 +272,15 @@ static void s6e3fc3_6a_update_wrctrld(struct exynos_panel *ctx)
 
 	EXYNOS_DCS_WRITE_SEQ(ctx, MIPI_DCS_WRITE_CONTROL_DISPLAY, val);
 
-	/* TODO: need to perform gamma updates */
+	/* If the current mode is 90Hz, re-apply the 90Hz overclock command to prevent
+	   the display control write (0x53) from resetting the panel to 60Hz. */
+	if (ctx->current_mode) {
+		unsigned int vrefresh = drm_mode_vrefresh(&ctx->current_mode->mode);
+		dev_info(ctx->dev, "%s: current_mode vrefresh is %u\n", __func__, vrefresh);
+		if (vrefresh == 90) {
+			s6e3fc3_6a_change_frequency(ctx, vrefresh);
+		}
+	}
 }
 
 static void s6e3fc3_6a_set_nolp_mode(struct exynos_panel *ctx,
@@ -302,6 +302,47 @@ static void s6e3fc3_6a_set_nolp_mode(struct exynos_panel *ctx,
 }
 
 #define s6e3fc3_6a_LOCAL_HBM_GAMMA_CMD_SIZE 6
+
+static void s6e3fc3_6a_update_lhbm_gamma(struct exynos_panel *ctx)
+{
+	/*
+	 * ratio original value R: 1.076923077, G: 1.061566485, B: 1.065269461.
+	 * ratio cannot exceed u32 max 4294967296.
+	 * R gamma hex from last 16bit from gamma_cmd[1] combine with gamma_cmd[3]
+	 * G gamma hex from first 16bit from gamma_cmd[2] combine with gamma_cmd[4]
+	 * B gamma hex from last 16bit from gamma_cmd[2] combine with gamma_cmd[5]
+	 */
+	u8 *gamma_cmd = ctx->hbm.local_hbm.gamma_cmd;
+	const u32 rgb_ratio[3] = {1076923077, 1061566485, 1065269461};
+	const u8 rgb_index[3][2] = {{1, 3}, {2, 4}, {2, 5}};
+	u8 new_gamma_cmd[s6e3fc3_6a_LOCAL_HBM_GAMMA_CMD_SIZE] = {0};
+	u64 tmp;
+	int i;
+	u16 mask, shift;
+	dev_info(ctx->dev, "%s: gamma_cmd(%02x %02x %02x %02x %02x)\n", __func__,
+		gamma_cmd[1], gamma_cmd[2], gamma_cmd[3], gamma_cmd[4], gamma_cmd[5]);
+	for (i = 0; i < ARRAY_SIZE(rgb_ratio); i++) {
+		if (i % 2) {
+			mask = 0xf0;
+			shift = 4;
+		} else {
+			mask = 0x0f;
+			shift = 0;
+		}
+		tmp = ((gamma_cmd[rgb_index[i][0]] & mask) >> shift) << 8 | gamma_cmd[rgb_index[i][1]];
+		dev_dbg(ctx->dev, "%s: lhbm_gamma[%d] = %llu\n", __func__, i, tmp);
+
+		/* Round off and revert to original gamma value */
+		tmp = (tmp * rgb_ratio[i] + 500000000)/1000000000;
+		dev_dbg(ctx->dev, "%s: new lhbm_gamma[%d] = %llu\n", __func__, i, tmp);
+		new_gamma_cmd[rgb_index[i][0]] |= ((tmp & 0xff00) >> 8) << shift;
+		new_gamma_cmd[rgb_index[i][1]] |= tmp & 0xff;
+	}
+	memcpy(&gamma_cmd[1], &new_gamma_cmd[1], s6e3fc3_6a_LOCAL_HBM_GAMMA_CMD_SIZE - 1);
+	dev_info(ctx->dev, "%s: new_gamma_cmd(%02x %02x %02x %02x %02x)\n", __func__,
+		gamma_cmd[1], gamma_cmd[2], gamma_cmd[3], gamma_cmd[4], gamma_cmd[5]);
+}
+
 static int s6e3fc3_6a_lhbm_gamma_read(struct exynos_panel *ctx)
 {
 	struct mipi_dsi_device *dsi = to_mipi_dsi_device(ctx->dev);
@@ -324,6 +365,7 @@ static int s6e3fc3_6a_lhbm_gamma_read(struct exynos_panel *ctx)
 	EXYNOS_DCS_WRITE_SEQ(ctx, 0xB0, 0x00, 0x28, 0xF2); /* global para*/
 	EXYNOS_DCS_WRITE_SEQ(ctx, 0xF2, 0xC4); /* 8 bit */
 	EXYNOS_DCS_WRITE_TABLE(ctx, test_key_off_f0);
+	s6e3fc3_6a_update_lhbm_gamma(ctx);
 	return ret;
 }
 
@@ -332,7 +374,7 @@ static void s6e3fc3_6a_lhbm_gamma_write(struct exynos_panel *ctx)
 	EXYNOS_DCS_WRITE_TABLE(ctx, test_key_on_f0);
 	EXYNOS_DCS_WRITE_SEQ(ctx, 0xB0, 0x28, 0xF2); /* global para*/
 	EXYNOS_DCS_WRITE_SEQ(ctx, 0xF2, 0xCC); /* 10 bit */
-	EXYNOS_DCS_WRITE_SEQ(ctx, 0xB0, 0x03, 0xCD, 0x65); /* global para */
+	EXYNOS_DCS_WRITE_SEQ(ctx, 0xB0, 0x03, 0xC8, 0x65); /* global para */
 	exynos_dcs_write(ctx, ctx->hbm.local_hbm.gamma_cmd,
 			 s6e3fc3_6a_LOCAL_HBM_GAMMA_CMD_SIZE); /* write gamma */
 	EXYNOS_DCS_WRITE_SEQ(ctx, 0xB0, 0x00, 0x28, 0xF2); /* global para*/
@@ -379,6 +421,8 @@ static int s6e3fc3_6a_enable(struct drm_panel *panel)
 	else
 		EXYNOS_DCS_WRITE_SEQ(ctx, 0x29); /* display on */
 
+	s6e3fc3_6a_update_te2(ctx);
+
 	return 0;
 }
 
@@ -422,28 +466,6 @@ static void s6e3fc3_6a_set_dimming_on(struct exynos_panel *exynos_panel,
 static void s6e3fc3_6a_set_local_hbm_mode(struct exynos_panel *exynos_panel,
 				 bool local_hbm_en)
 {
-	const struct exynos_panel_mode *pmode;
-
-	if (exynos_panel->hbm.local_hbm.enabled == local_hbm_en)
-		return;
-
-	pmode = exynos_panel->current_mode;
-	if (unlikely(pmode == NULL)) {
-		dev_err(exynos_panel->dev, "%s: unknown current mode\n", __func__);
-		return;
-	}
-	if (local_hbm_en) {
-		const int vrefresh = drm_mode_vrefresh(&pmode->mode);
-		/* LHBM is only safe at 90 Hz on bluejay */
-		if (vrefresh != 90) {
-			dev_err(exynos_panel->dev,
-				"unexpected mode `%s` while enabling LHBM, give up\n",
-				pmode->mode.name);
-			return;
-		}
-	}
-
-	exynos_panel->hbm.local_hbm.enabled = local_hbm_en;
 	s6e3fc3_6a_update_wrctrld(exynos_panel);
 }
 
@@ -481,6 +503,9 @@ static void s6e3fc3_6a_panel_init(struct exynos_panel *ctx)
 	if (ctx->panel_rev >= PANEL_REV_PROTO1_1)
 		if (!s6e3fc3_6a_lhbm_gamma_read(ctx))
 			s6e3fc3_6a_lhbm_gamma_write(ctx);
+
+	if (ctx->enabled)
+		s6e3fc3_6a_update_te2(ctx);
 }
 
 static void s6e3fc3_6a_get_panel_rev(struct exynos_panel *ctx, u32 id)
@@ -522,7 +547,7 @@ static const struct exynos_panel_mode s6e3fc3_6a_modes[] = {
 		.exynos_mode = {
 			.mode_flags = MIPI_DSI_CLOCK_NON_CONTINUOUS,
 			.vblank_usec = 120,
-			.te_usec = 140,
+			.te_usec = 5630,
 			.bpc = 8,
 			.dsc = {
 				.enabled = true,
@@ -557,6 +582,7 @@ static const struct exynos_panel_mode s6e3fc3_6a_modes[] = {
 		.exynos_mode = {
 			.mode_flags = MIPI_DSI_CLOCK_NON_CONTINUOUS,
 			.vblank_usec = 120,
+			.te_usec = 140,
 			.bpc = 8,
 			.dsc = {
 				.enabled = true,
